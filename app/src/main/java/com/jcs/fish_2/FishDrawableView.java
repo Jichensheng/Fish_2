@@ -14,6 +14,7 @@ import android.os.Build;
 import android.support.annotation.RequiresApi;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -36,7 +37,8 @@ public class FishDrawableView extends RelativeLayout {
 	private int mScreenHeight;
 	private ImageView ivFish;
 	private FishDrawable fishDrawable;
-
+	private ObjectAnimator animator;
+	private ObjectAnimator rippleAnimator;
 	private Paint mPaint;
 	private int alpha = 100;
 	private Canvas canvas;
@@ -58,133 +60,6 @@ public class FishDrawableView extends RelativeLayout {
 		super(context, attrs, defStyleAttr);
 		initStuff(context);
 	}
-
-
-	@Override
-	protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-		super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-		setMeasuredDimension(mScreenWidth, mScreenHeight);
-	}
-
-	private void initStuff(Context context) {
-		setWillNotDraw(false);
-		getScreenParams();
-		mPaint = new Paint();
-		mPaint.setAntiAlias(true);
-		mPaint.setDither(true);
-		mPaint.setStyle(Paint.Style.STROKE);
-		mPaint.setStrokeWidth(STROKE_WIDTH);
-
-
-		ivFish = new ImageView(context);
-		LayoutParams params = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-		ivFish.setLayoutParams(params);
-		fishDrawable = new FishDrawable(context);
-		ivFish.setImageDrawable(fishDrawable);
-
-		addView(ivFish);
-	}
-
-	@Override
-	protected void onDraw(Canvas canvas) {
-		if (this.canvas == null) {
-			this.canvas = canvas;
-		}
-		//方便刷新透明度
-		mPaint.setARGB(alpha, 0, 125, 251);
-
-		canvas.drawCircle(x, y, radius, mPaint);
-	}
-
-
-	@RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
-	@Override
-	public boolean onTouchEvent(MotionEvent event) {
-		x = event.getX();
-		y = event.getY();
-		ObjectAnimator animator = ObjectAnimator.ofFloat(this, "radius", 0f, 1f).setDuration(1000);
-		animator.start();
-		makeTrail(new PointF(x, y));
-		return super.onTouchEvent(event);
-	}
-
-	/**
-	 * 鱼头是第一控点，中点和头与中点和点击点的夹角的一半是第二个控制点角度
-	 *
-	 * @param touch
-	 */
-	@RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
-	private void makeTrail(PointF touch) {
-		Path path = new Path();
-		PointF fishMiddle = new PointF(ivFish.getX() + fishDrawable.getMiddlePoint().x, ivFish.getY() + fishDrawable.getMiddlePoint().y);
-		PointF fishHead = new PointF(ivFish.getX() + fishDrawable.getHeadPoint().x, ivFish.getY() + fishDrawable.getHeadPoint().y);
-		path.moveTo(ivFish.getX(), ivFish.getY());
-		final float angle = includedAngle(fishMiddle, fishHead, touch);
-		float delta = calcultatAngle(fishMiddle, fishHead);
-		PointF controlF = calculatPoint(fishMiddle, 1.6f*fishDrawable.HEAD_RADIUS, angle / 2 + delta);
-		path.cubicTo(fishHead.x, fishHead.y, controlF.x, controlF.y, touch.x - fishDrawable.getHeadPoint().x, touch.y - fishDrawable.getHeadPoint().y);
-
-		final float[] pos = new float[2];
-		final float[] tan = new float[2];
-		final PathMeasure pathMeasure = new PathMeasure(path, false);
-
-		ObjectAnimator animator = ObjectAnimator.ofFloat(ivFish, "x", "y", path);
-		animator.setDuration(2 * 1000);
-		animator.setInterpolator(new AccelerateDecelerateInterpolator());
-		animator.addListener(new AnimatorListenerAdapter() {
-			@Override
-			public void onAnimationEnd(Animator animation) {
-				super.onAnimationEnd(animation);
-				fishDrawable.setWaveFrequence(1f);
-			}
-
-			@Override
-			public void onAnimationStart(Animator animation) {
-				super.onAnimationStart(animation);
-				fishDrawable.setWaveFrequence(2f);
-				ObjectAnimator finsAnimator = fishDrawable.getFinsAnimator();
-				finsAnimator.setRepeatCount(new Random().nextInt(3));
-				finsAnimator.setDuration((long) ((new Random().nextInt(1) + 1) * 500));
-				finsAnimator.start();
-			}
-		});
-		animator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
-			@Override
-			public void onAnimationUpdate(ValueAnimator animation) {
-				float persent = animation.getAnimatedFraction();
-				pathMeasure.getPosTan(pathMeasure.getLength() * persent, pos, tan);
-				float angle = (float) (Math.atan2(tan[0], tan[1]) * 180.0 / Math.PI);
-				fishDrawable.setMainAngle(angle - 90);
-			}
-		});
-		animator.start();
-
-	}
-
-	/**
-	 * ObjectAnimators自动执行
-	 *
-	 * @param currentValue
-	 */
-	public void setRadius(float currentValue) {
-		alpha = (int) (100 * (1 - currentValue) / 2);
-		radius = DEFAULT_RADIUS * currentValue;
-		postInvalidate();
-
-	}
-
-	/**
-	 * 获取屏幕宽高
-	 */
-	public void getScreenParams() {
-		WindowManager WM = (WindowManager) getContext().getSystemService(Context.WINDOW_SERVICE);
-		DisplayMetrics mDisplayMetrics = new DisplayMetrics();
-		WM.getDefaultDisplay().getMetrics(mDisplayMetrics);
-		mScreenWidth = mDisplayMetrics.widthPixels;
-		mScreenHeight = mDisplayMetrics.heightPixels;
-
-	}
-
 
 	/**
 	 * 起点\长度\角度计算终点
@@ -245,5 +120,139 @@ public class FishDrawableView extends RelativeLayout {
 				return temAngle;
 			}
 		}
+	}
+
+	@Override
+	protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+		super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+		setMeasuredDimension(mScreenWidth, mScreenHeight);
+	}
+
+	private void initStuff(Context context) {
+		setWillNotDraw(false);
+		getScreenParams();
+		mPaint = new Paint();
+		mPaint.setAntiAlias(true);
+		mPaint.setDither(true);
+		mPaint.setStyle(Paint.Style.STROKE);
+		mPaint.setStrokeWidth(STROKE_WIDTH);
+
+
+		ivFish = new ImageView(context);
+		LayoutParams params = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+		ivFish.setLayoutParams(params);
+		fishDrawable = new FishDrawable(context);
+		ivFish.setImageDrawable(fishDrawable);
+
+		addView(ivFish);
+	}
+
+	@Override
+	protected void onDraw(Canvas canvas) {
+		if (this.canvas == null) {
+			this.canvas = canvas;
+		}
+		//方便刷新透明度
+		mPaint.setARGB(alpha, 0, 125, 251);
+
+		canvas.drawCircle(x, y, radius, mPaint);
+	}
+
+	@RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+	@Override
+	public boolean onTouchEvent(MotionEvent event) {
+		x = event.getX();
+		y = event.getY();
+		rippleAnimator = ObjectAnimator.ofFloat(this, "radius", 0f, 1f).setDuration(1000);
+		rippleAnimator.start();
+		makeTrail(new PointF(x, y));
+		return super.onTouchEvent(event);
+	}
+
+	/**
+	 * 鱼头是第一控点，中点和头与中点和点击点的夹角的一半是第二个控制点角度
+	 *
+	 * @param touch
+	 */
+	@RequiresApi(api = Build.VERSION_CODES.LOLLIPOP)
+	private void makeTrail(PointF touch) {
+		/**
+		 * 起点和中点是鱼的身体重心处和点击点，三阶贝塞尔的两个控制点分别是鱼头圆心点和夹角中点。
+		 * 但是平移不是平移的鱼，而是平移的ImageView，而ImageView的setX，setY方法是相对于ImageView左上角的
+		 * 所以需要把计算好的贝塞尔曲线做一个平移，让贝塞尔曲线的起点和ImageView重合
+		 * deltaX,Y即是平移的绝对距离
+		 */
+		float deltaX=fishDrawable.getMiddlePoint().x;
+		float deltaY=fishDrawable.getMiddlePoint().y;
+		Path path = new Path();
+		PointF fishMiddle = new PointF(ivFish.getX() + deltaX, ivFish.getY() + deltaY);
+		PointF fishHead = new PointF(ivFish.getX() + fishDrawable.getHeadPoint().x, ivFish.getY() + fishDrawable.getHeadPoint().y);
+		//把贝塞尔曲线起始点平移到Imageview的左上角
+		path.moveTo(fishMiddle.x - deltaX, fishMiddle.y - deltaY);
+		final float angle = includedAngle(fishMiddle, fishHead, touch);
+		float delta = calcultatAngle(fishMiddle, fishHead);
+		PointF controlF = calculatPoint(fishMiddle, 1.6f * fishDrawable.HEAD_RADIUS, angle / 2 + delta);
+		//把贝塞尔曲线的所有控制点和结束点都做平移处理
+		path.cubicTo(fishHead.x - deltaX, fishHead.y - deltaY, controlF.x - deltaX, controlF.y - deltaY, touch.x - deltaX, touch.y - deltaY);
+
+		final float[] tan = new float[2];
+		final PathMeasure pathMeasure = new PathMeasure(path, false);
+		animator = ObjectAnimator.ofFloat(ivFish, "x", "y", path);
+		animator.setDuration(2 * 1000);
+		animator.setInterpolator(new AccelerateDecelerateInterpolator());
+		//动画启动和结束时设置鱼鳍摆动动画，同时控制鱼身摆动频率
+		animator.addListener(new AnimatorListenerAdapter() {
+			@Override
+			public void onAnimationEnd(Animator animation) {
+				super.onAnimationEnd(animation);
+				fishDrawable.setWaveFrequence(1f);
+			}
+
+			@Override
+			public void onAnimationStart(Animator animation) {
+				super.onAnimationStart(animation);
+				fishDrawable.setWaveFrequence(2f);
+				ObjectAnimator finsAnimator = fishDrawable.getFinsAnimator();
+				finsAnimator.setRepeatCount(new Random().nextInt(3));
+				finsAnimator.setDuration((long) ((new Random().nextInt(1) + 1) * 500));
+				finsAnimator.start();
+			}
+		});
+		animator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+			@Override
+			public void onAnimationUpdate(ValueAnimator animation) {
+				float fraction = animation.getAnimatedFraction();
+				pathMeasure.getPosTan(pathMeasure.getLength() * fraction, null, tan);
+				float angle = (float) (Math.toDegrees(Math.atan2(-tan[1], tan[0])));
+				Log.e("**-**-**-**", "onAnimationUpdate: " + angle);
+				fishDrawable.setMainAngle(angle);
+			}
+		});
+		animator.start();
+
+	}
+
+	/**
+	 * ObjectAnimators自动执行
+	 *
+	 * @param currentValue
+	 */
+	public void setRadius(float currentValue) {
+		alpha = (int) (100 * (1 - currentValue) / 2);
+		radius = DEFAULT_RADIUS * currentValue;
+		invalidate();
+
+	}
+
+	/**
+	 * 获取屏幕宽高
+	 */
+	public void getScreenParams() {
+		WindowManager WM = (WindowManager) getContext().getSystemService(Context.WINDOW_SERVICE);
+		DisplayMetrics mDisplayMetrics = new DisplayMetrics();
+		WM.getDefaultDisplay().getMetrics(mDisplayMetrics);
+		mScreenWidth = mDisplayMetrics.widthPixels;
+		mScreenHeight = mDisplayMetrics.heightPixels;
+
 	}
 }
